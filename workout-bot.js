@@ -1,6 +1,5 @@
 const { Telegraf, Markup, session } = require('telegraf');
 const { Client } = require('@notionhq/client');
-const puppeteer = require('puppeteer');
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
@@ -8,40 +7,9 @@ const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
 // State management
 const userNames = {};
-const pendingProposals = {};
 
 // Middleware
 bot.use(session());
-
-// Scrape myclubs page to extract class details
-async function scrapeClassDetails(url) {
-  let browser;
-  try {
-    browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 10000 });
-
-    // Extract class name, time, location from rendered page
-    const classData = await page.evaluate(() => {
-      const titleEl = document.querySelector('h1') || document.querySelector('[class*="title"]');
-      const timeEl = document.querySelector('[class*="time"]') || document.querySelector('[class*="date"]');
-      const locationEl = document.querySelector('[class*="location"]') || document.querySelector('[class*="studio"]');
-
-      return {
-        name: titleEl?.textContent?.trim() || 'Workout',
-        time: timeEl?.textContent?.trim() || 'TBD',
-        location: locationEl?.textContent?.trim() || '',
-      };
-    });
-
-    await browser.close();
-    return classData;
-  } catch (err) {
-    console.error('Scrape error:', err);
-    if (browser) await browser.close();
-    return null;
-  }
-}
 
 // Extract IDs from link
 function extractActivityIds(url) {
@@ -249,22 +217,18 @@ bot.on('text', async (ctx) => {
     // Check for myclubs link
     const link = ctx.message.text.match(/https:\/\/www\.myclubs\.com\/.*joinme.*/i);
     if (link) {
-      const fullLink = link[0];
-      const ids = extractActivityIds(fullLink);
+      ctx.session.pendingLink = link[0];
+      ctx.session.pendingIds = extractActivityIds(link[0]);
+      await ctx.reply('Class name & time? (e.g., "Yoga 6pm Wed")');
+      return;
+    }
+
+    // Saving proposal
+    if (ctx.session?.pendingLink) {
+      const classInfo = ctx.message.text.trim();
       const name = userNames[ctx.from.id] || 'Unknown';
 
-      // Show loading message
-      await ctx.reply('⏳ Extracting class details...');
-
-      // Scrape the page
-      const classDetails = await scrapeClassDetails(fullLink);
-      
-      if (!classDetails) {
-        await ctx.reply('❌ Could not extract class details. Try again or share manually.');
-        return;
-      }
-
-      const classInfo = `${classDetails.name}, ${classDetails.time}`;
+      const ids = ctx.session.pendingIds;
 
       // Check if exists
       const existing = await notion.databases.query({
@@ -289,14 +253,14 @@ bot.on('text', async (ctx) => {
           },
         });
 
-        await ctx.reply(`✅ Added to: ${classInfo}\n👍 ${name} is interested!`);
+        await ctx.reply(`✅ Added to: ${classInfo}`);
       } else {
         // Create new
         await notion.pages.create({
           parent: { database_id: DATABASE_ID },
           properties: {
             Name: { title: [{ text: { content: classInfo } }] },
-            Link: { url: fullLink },
+            Link: { url: ctx.session.pendingLink },
             'Activity ID': { rich_text: [{ text: { content: ids.activityId } }] },
             'Activity Date ID': { rich_text: [{ text: { content: ids.activityDateId } }] },
             Interested: { multi_select: [{ name }] },
@@ -305,6 +269,9 @@ bot.on('text', async (ctx) => {
 
         await ctx.reply(`✅ Proposal created: ${classInfo}\n👍 ${name} is interested!`);
       }
+
+      ctx.session.pendingLink = null;
+      ctx.session.pendingIds = null;
     }
   } catch (err) {
     console.error('Text handler error:', err);
