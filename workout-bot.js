@@ -279,7 +279,6 @@ bot.action(/out_(\d+)/, async (ctx) => {
     await ctx.answerCbQuery('❌ Error');
   }
 });
-
 // Start command
 bot.start((ctx) => {
   ctx.reply(
