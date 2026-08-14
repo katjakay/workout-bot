@@ -9,8 +9,7 @@
   },
   "dependencies": {
     "telegraf": "^4.14.1",
-    "@notionhq/client": "^2.2.11",
-    "puppeteer": "^21.0.0"
+    "@notionhq/client": "^2.2.11"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
