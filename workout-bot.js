@@ -55,31 +55,34 @@ bot.command('list', async (ctx) => {
       return;
     }
 
-    let text = '📋 **Proposals:**\n\n';
-    const buttons = [];
+    await ctx.reply('📋 **Active Proposals:**', { parse_mode: 'Markdown' });
 
+    // Send each proposal as its own message with buttons
     response.results.forEach((page, i) => {
       const name = page.properties.Name?.title[0]?.text?.content || 'Untitled';
       const link = page.properties.Link?.url || '';
       const interested = page.properties.Interested?.multi_select?.map(s => s.name).join(', ') || '-';
       const confirmed = page.properties.Confirmed?.multi_select?.map(s => s.name).join(', ') || '-';
 
-      text += `${i + 1}️⃣ ${name}\n`;
+      let text = `${i + 1}️⃣ ${name}\n`;
       if (link) text += `🔗 [myclubs](${link})\n`;
-      text += `👍 ${interested}\n✅ ${confirmed}\n\n`;
-      
-      buttons.push([
-        Markup.button.callback(`👍 In`, `in_${i}`),
-        Markup.button.callback(`✅ Confirmed`, `confirm_${i}`),
-        Markup.button.callback(`❌ Out`, `out_${i}`),
-      ]);
-    });
+      text += `👍 ${interested}\n✅ ${confirmed}`;
 
-    buttons.push([Markup.button.callback('🔄', 'refresh')]);
+      const buttons = [
+        [
+          Markup.button.callback(`👍 In`, `in_${i}`),
+          Markup.button.callback(`✅ Confirmed`, `confirm_${i}`),
+          Markup.button.callback(`❌ Out`, `out_${i}`),
+        ],
+      ];
 
-    await ctx.reply(text, {
-      parse_mode: 'Markdown',
-      reply_markup: Markup.inlineKeyboard(buttons).reply_markup,
+      // Send with a small delay so messages appear in order
+      setTimeout(() => {
+        ctx.reply(text, {
+          parse_mode: 'Markdown',
+          reply_markup: Markup.inlineKeyboard(buttons).reply_markup,
+        });
+      }, i * 500);
     });
   } catch (err) {
     console.error('List error:', err);
