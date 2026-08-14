@@ -115,7 +115,10 @@ bot.on('text', async (ctx) => {
   }
 });
 
-// List all proposals
+// Store proposals in memory for button callbacks
+let proposalsCache = {};
+
+// List all proposals with buttons
 bot.command('list', showProposals);
 
 async function showProposals(ctx) {
@@ -129,7 +132,8 @@ async function showProposals(ctx) {
       return;
     }
 
-    let message = '📋 **Active Proposals:**\n\n';
+    proposalsCache = {}; // Reset cache
+    const keyboard = [];
 
     response.results.forEach((page, index) => {
       const name = page.properties.Name?.title[0]?.text?.content || 'Untitled';
@@ -140,22 +144,141 @@ async function showProposals(ctx) {
         page.properties.Confirmed?.multi_select?.map((s) => s.name).join(', ') ||
         'None';
 
-      message += `${index + 1}️⃣ ${name}\n`;
-      message += `👍 Interested: ${interested}\n`;
-      message += `✅ Confirmed: ${confirmed}\n\n`;
+      const num = index + 1;
+      proposalsCache[num] = { pageId: page.id, name };
+
+      // Create message for this proposal
+      const msg = `${num}️⃣ ${name}\n👍 Interested: ${interested}\n✅ Confirmed: ${confirmed}`;
+      
+      // Add buttons for this proposal
+      keyboard.push([
+        Markup.button.callback(`👍 ${num}`, `interested_${num}`),
+        Markup.button.callback(`✅ ${num}`, `confirm_${num}`),
+        Markup.button.callback(`❌ ${num}`, `out_${num}`),
+      ]);
     });
 
-    await ctx.reply(message, {
+    // Build full message
+    let fullMessage = '📋 **Active Proposals:**\n\n';
+    Object.entries(proposalsCache).forEach((key) => {
+      const index = parseInt(key[0]);
+      const page = response.results[index - 1];
+      const name = page.properties.Name?.title[0]?.text?.content || 'Untitled';
+      const interested =
+        page.properties.Interested?.multi_select?.map((s) => s.name).join(', ') ||
+        'None';
+      const confirmed =
+        page.properties.Confirmed?.multi_select?.map((s) => s.name).join(', ') ||
+        'None';
+
+      fullMessage += `${index}️⃣ ${name}\n👍 ${interested}\n✅ ${confirmed}\n\n`;
+    });
+
+    keyboard.push([Markup.button.callback('🔄 Refresh', 'refresh_list')]);
+
+    await ctx.reply(fullMessage, {
       parse_mode: 'Markdown',
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('🔄 Refresh', 'refresh_list')],
-      ]).reply_markup,
+      reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
     });
   } catch (error) {
     console.error('Error fetching proposals:', error);
     await ctx.reply('❌ Error fetching proposals.');
   }
 }
+
+// Button handlers
+bot.action(/interested_(\d+)/, async (ctx) => {
+  const num = ctx.match[1];
+  const userName = ctx.session?.userName || 'Unknown';
+  
+  try {
+    const response = await notion.databases.query({
+      database_id: DATABASE_ID,
+    });
+    const page = response.results[num - 1];
+    
+    await notion.pages.update({
+      page_id: page.id,
+      properties: {
+        Interested: {
+          multi_select: [
+            ...(page.properties.Interested?.multi_select || []),
+            { name: userName },
+          ],
+        },
+      },
+    });
+    
+    await ctx.answerCbQuery(`✅ ${userName} marked as interested!`);
+    await showProposals(ctx);
+  } catch (error) {
+    console.error('Error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+});
+
+bot.action(/confirm_(\d+)/, async (ctx) => {
+  const num = ctx.match[1];
+  const userName = ctx.session?.userName || 'Unknown';
+  
+  try {
+    const response = await notion.databases.query({
+      database_id: DATABASE_ID,
+    });
+    const page = response.results[num - 1];
+    
+    await notion.pages.update({
+      page_id: page.id,
+      properties: {
+        Confirmed: {
+          multi_select: [
+            ...(page.properties.Confirmed?.multi_select || []),
+            { name: userName },
+          ],
+        },
+      },
+    });
+    
+    await ctx.answerCbQuery(`✅ ${userName} confirmed!`);
+    await showProposals(ctx);
+  } catch (error) {
+    console.error('Error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+});
+
+bot.action(/out_(\d+)/, async (ctx) => {
+  const num = ctx.match[1];
+  const userName = ctx.session?.userName || 'Unknown';
+  
+  try {
+    const response = await notion.databases.query({
+      database_id: DATABASE_ID,
+    });
+    const page = response.results[num - 1];
+    
+    const interested = page.properties.Interested?.multi_select || [];
+    const confirmed = page.properties.Confirmed?.multi_select || [];
+    
+    await notion.pages.update({
+      page_id: page.id,
+      properties: {
+        Interested: {
+          multi_select: interested.filter((s) => s.name !== userName),
+        },
+        Confirmed: {
+          multi_select: confirmed.filter((s) => s.name !== userName),
+        },
+      },
+    });
+    
+    await ctx.answerCbQuery(`${userName} removed`);
+    await showProposals(ctx);
+  } catch (error) {
+    console.error('Error:', error);
+    await ctx.answerCbQuery('❌ Error');
+  }
+});
 
 // Start command
 bot.start((ctx) => {
