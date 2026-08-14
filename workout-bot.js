@@ -69,9 +69,9 @@ bot.command('list', async (ctx) => {
       text += `👍 ${interested}\n✅ ${confirmed}\n\n`;
       
       buttons.push([
-        Markup.button.callback(`👍 Interested`, `in_${i}`),
+        Markup.button.callback(`👍 In`, `in_${i}`),
         Markup.button.callback(`✅ Confirmed`, `confirm_${i}`),
-        Markup.button.callback(`❌ I'm out`, `out_${i}`),
+        Markup.button.callback(`❌ Out`, `out_${i}`),
       ]);
     });
 
