@@ -60,10 +60,13 @@ bot.command('list', async (ctx) => {
 
     response.results.forEach((page, i) => {
       const name = page.properties.Name?.title[0]?.text?.content || 'Untitled';
+      const link = page.properties.Link?.url || '';
       const interested = page.properties.Interested?.multi_select?.map(s => s.name).join(', ') || '-';
       const confirmed = page.properties.Confirmed?.multi_select?.map(s => s.name).join(', ') || '-';
 
-      text += `${i + 1}️⃣ ${name}\n👍 ${interested}\n✅ ${confirmed}\n\n`;
+      text += `${i + 1}️⃣ ${name}\n`;
+      if (link) text += `🔗 [myclubs](${link})\n`;
+      text += `👍 ${interested}\n✅ ${confirmed}\n\n`;
       
       buttons.push([
         Markup.button.callback(`👍${i + 1}`, `in_${i}`),
